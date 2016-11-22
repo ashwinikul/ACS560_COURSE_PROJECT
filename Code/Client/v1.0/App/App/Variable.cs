@@ -12,7 +12,6 @@ namespace App
         public static string gusername = ""; // it will store username
         public static string gusertype = ""; // it will store user type 
         public static string guserfullname = ""; //fullname
-        public static string ipaddress = "10.0.0.2";
 
     }
 }
