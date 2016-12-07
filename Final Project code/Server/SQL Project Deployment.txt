@@ -1,0 +1,209 @@
+
+
+
+create table userLogin (
+userid INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL ,
+user_name varchar(20) NOT NULL,
+user_type varchar(20) NOT NULL,
+u_password varchar(10) NOT NULL,
+createdBy  varchar(20) NOT NULL,
+UpdatedBy varchar(20) NOT NULL,
+Modifieddate datetime NOT NULL
+);
+
+
+
+
+create table userDetails (
+userid int PRIMARY KEY NOT NULL,
+user_Full_name varchar(100) NOT NULL,
+gender char(1) NOT NULL,
+Location varchar(300) NOT NULL,
+Contact  varchar(15) NOT NULL,
+SecurityQus Varchar(100) NOT NULL,
+SecurityAns varchar(10) NOT NULL,
+createdBy  varchar(20) NOT NULL,
+UpdatedBy varchar(20) NOT NULL,
+Modifieddate datetime NOT NULL,
+FOREIGN KEY(userid) REFERENCES userLogin (userid)
+);
+
+
+create table adds (
+addid INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL ,
+add_name varchar(200) NOT NULL,
+userid INTEGER NOT NULL,
+add_details varchar(500) NOT NULL,
+block INTEGER,
+createdBy  varchar(20) NOT NULL,
+UpdatedBy varchar(20) NOT NULL,
+Modifieddate datetime NOT NULL,
+FOREIGN KEY(userid) REFERENCES userLogin (userid)
+);
+
+
+create table comments (
+commentid INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL ,
+addid INTEGER ,
+userid INTEGER NOT NULL,
+comment varchar(500) NOT NULL,
+block INTEGER,
+createdBy  varchar(20) NOT NULL,
+UpdatedBy varchar(20) NOT NULL,
+Modifieddate datetime NOT NULL,
+FOREIGN KEY(userid) REFERENCES userLogin (userid),
+FOREIGN KEY(userid) REFERENCES adds (addid)
+);	
+
+create table add_security (
+secid INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL ,
+type varchar(20),
+addid INTEGER, 
+commentid INTEGER,
+block INTEGER,
+userid INTEGER NOT NULL,
+createdBy  varchar(20) NOT NULL,
+UpdatedBy varchar(20) NOT NULL,
+Modifieddate datetime NOT NULL
+);
+
+
+CREATE TRIGGER ADD_ENTRY_SM  AFTER INSERT 
+ON userLogin
+WHEN NEW.user_type='secmgr'
+
+BEGIN
+
+INSERT INTO add_security (type,addid,userid, createdBy,UpdatedBy,Modifieddate ) 
+Values
+(
+'add',NULL, 
+ NEW.userid,
+  'trigger','trigger',datetime('now') 
+);
+
+INSERT INTO add_security (type,commentid,userid, createdBy,UpdatedBy,Modifieddate ) 
+Values
+(
+'comment',NULL, 
+ NEW.userid,
+  'trigger','trigger',datetime('now') 
+);
+
+END;
+
+CREATE  TRIGGER COMMENT_CHECK AFTER INSERT 
+ON Comments
+BEGIN
+
+INSERT INTO add_security (type,commentid,userid, createdBy,UpdatedBy,Modifieddate ) 
+Values
+(
+'comment',NEW.commentid, 
+ (SELECT IFNULL(
+  ( select T1.userid FROM (select  A.userid, count(*) count from add_security A inner join userLogin U on A.userid=U.userid where A.block is NULL and A.type='comment' and U.user_type='secmgr'
+                           group by userid order by 2 LIMIT 1) T1 
+  ),(select min(userid) from userLogin where user_type='secmgr'))),
+  
+  'trigger','trigger',datetime('now') 
+);
+
+END;
+
+
+CREATE  TRIGGER ADD_CHECK AFTER INSERT 
+ON adds
+BEGIN
+
+INSERT INTO add_security (type,addid,userid, createdBy,UpdatedBy,Modifieddate ) 
+Values
+(
+'add',NEW.addid, 
+ (SELECT IFNULL(
+  ( select T1.userid FROM (select  A.userid, count(*) count from add_security A inner join userLogin U on A.userid=U.userid where A.block is NULL and A.type='add' and U.user_type='secmgr'
+                           group by userid order by 2 LIMIT 1) T1 
+  ),(select min(userid) from userLogin where user_type='secmgr'))),
+  
+  'trigger','trigger',datetime('now') 
+);
+
+END;
+
+
+
+
+CREATE  TRIGGER SM_Halt AFTER Update 
+ON userLogin 
+BEGIN
+
+UPDATE add_security SET userid =  (IFNULL(
+  ( select T1.userid FROM (select  userid, count(*) count from add_security where block is NULL and type in ('commentid','addid') and userid not in (SELECT distinct new.userid FROM userLogin WHERE new.user_type in ('secmgrhalt' ,'secmgrdelete') )
+                           group by userid order by 2 LIMIT 1) T1 
+  ),(select min(userid) from userLogin where user_type='secmgr' and  userid not in (SELECT distinct new.userid FROM userLogin WHERE new.user_type in ('secmgrhalt' ,'secmgrdelete'))))  ),
+  UpdatedBy ='Trigger',
+  Modifieddate=datetime('now') 
+  WHERE block  IS NULL AND (addid is not null or commentid is not null) AND USERID  IN (SELECT distinct new.userid FROM userLogin WHERE new.user_type in ('secmgrhalt' ,'secmgrdelete'));
+  
+UPDATE add_security SET userid = (IFNULL(
+  ( select T1.userid FROM (select  A.userid, count(*) count from add_security A inner join userLogin U on A.userid=U.userid where A.block is NULL and A.type='add' and U.user_type='secmgr'
+                           group by userid order by 2 LIMIT 1) T1 
+  ),(select min(userid) from userLogin where user_type='secmgr'))),
+  UpdatedBy ='Trigger',
+  Modifieddate=datetime('now') 
+  
+  WHERE block  IS NULL AND (addid is not null or commentid is not null)  ;
+  
+
+END;
+
+
+
+CREATE  TRIGGER add_block AFTER Update 
+ON add_security 
+BEGIN
+
+Update adds  SET Block=  (SELECT add_security.Block FROM add_security , UserLogin  
+						where adds.addid=add_security.addid and add_security.addid is not NULL and add_security.block is not null and add_security.userid= UserLogin.userid LIMIT 1),
+			 UpdatedBy = (SELECT  UserLogin.user_name FROM add_security , UserLogin  
+						where adds.addid=add_security.addid and add_security.addid is not NULL and add_security.block is not null and add_security.userid= UserLogin.userid LIMIT 1),
+			 Modifieddate = datetime('now') 
+
+WHERE
+    EXISTS (
+        SELECT add_security.Block, UserLogin.user_name
+        FROM add_security , UserLogin  
+	    where adds.addid=add_security.addid and add_security.addid is not NULL and add_security.block is not null and add_security.userid= UserLogin.userid
+    );
+
+
+END;
+
+
+
+
+CREATE  TRIGGER comment_block AFTER Update 
+ON add_security 
+BEGIN
+
+Update Comments  SET Block=  (SELECT add_security.Block FROM add_security , UserLogin  
+						where Comments.commentid=add_security.commentid and add_security.commentid is not NULL and add_security.block is not null and add_security.userid= UserLogin.userid LIMIT 1),
+			 UpdatedBy = (SELECT  UserLogin.user_name FROM add_security , UserLogin  
+						where Comments.commentid=add_security.commentid and add_security.commentid is not NULL and add_security.block is not null and add_security.userid= UserLogin.userid LIMIT 1),
+			 Modifieddate = datetime('now') 
+
+WHERE
+    EXISTS (
+        SELECT add_security.Block, UserLogin.user_name
+        FROM add_security , UserLogin  
+	    where Comments.commentid=add_security.commentid and add_security.commentid is not NULL and add_security.block is not null and add_security.userid= UserLogin.userid
+    );
+
+
+END;
+
+Insert into userLogin (user_name, user_type, u_password, createdBy, UpdatedBy, Modifieddate) values('ashwini','admin','qxgdwi','ashwini','ashwini', datetime('now'));
+
+
+Insert into userDetails (userid , user_Full_name , gender, Location, Contact , SecurityQus, SecurityAns ,createdBy, UpdatedBy, Modifieddate) values(1, 'ashwini kulkarni','F','Fortwayne 46835','260-705-9350','Favorite Food?','chips','ashwini', 'ashwini', datetime('now'));
+
+
